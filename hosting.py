@@ -30,7 +30,7 @@ OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 LOG_GC_ID = int(os.getenv("LOG_GC_ID"))
 
 if not BOT_TOKEN or not LOG_GC_ID:
-    print("❌ BOT_TOKEN aur LOG_GC_ID daal Railway env mein!")
+    print("❌ BOT_TOKEN aur LOG_GC_ID environment variables mein daal!")
     sys.exit(1)
 
 # ================= DIRECTORIES =================
@@ -173,17 +173,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ])
     text = (
         "🚀 <b><u>PRO PYTHON MANAGER BOT</u></b> 🚀\n\n"
-        "🌟 <b>Features:</b>\n"
-        "✨ Auto Restart • 📦 Auto Requirements\n"
-        "⏰ 30-Min Logs • 🛡️ Secure Key\n\n"
-        "💚 <i>Hare hare bot, full power!</i> 💚"
+        "🌟 <b>Premium Features:</b>\n"
+        "✨ Auto Restart on Crash\n"
+        "📦 Auto Install Requirements\n"
+        "⏰ 30-Min Auto Logs\n"
+        "🛡️ Secure Key System\n"
+        "💚 Full Backup in Owner Log GC\n\n"
+        "Upload .py files aur full control lo! 💚"
     )
     await update.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
 
 async def enterkey_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
-    await q.edit_message_text("🔑 <b>Key daalo:</b>\n\nCommand: <code>/enterkey</code>", parse_mode="HTML")
+    await q.edit_message_text("🔑 <b>Apna Access Key Daalo:</b>\n\nCommand: <code>/enterkey</code>", parse_mode="HTML")
 
 async def enterkey(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔑 <b>Apna KEY bhejo:</b>", parse_mode="HTML")
@@ -195,9 +198,9 @@ async def check_key(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_valid_key(user_id, key):
         authorized_users.add(str(user_id))
         save_all()
-        await update.message.reply_text("✅ <b>Key Accepted!</b>\nAb .py files upload kar sakte ho! 🚀", parse_mode="HTML")
+        await update.message.reply_text("✅ <b>Key Accepted Successfully!</b>\n\nAb .py files upload kar sakte ho! 🚀", parse_mode="HTML")
     else:
-        await update.message.reply_text("❌ <b>Invalid ya Expired Key!</b>", parse_mode="HTML")
+        await update.message.reply_text("❌ <b>Invalid ya Expired Key!</b>\nOwner se new key lo.", parse_mode="HTML")
     return ConversationHandler.END
 
 async def gkey(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -211,9 +214,16 @@ async def gkey(update: Update, context: ContextTypes.DEFAULT_TYPE):
     key = "".join(random.choices(string.ascii_uppercase + string.digits, k=16))
     keys[key] = {"expiry": datetime.utcnow() + timedelta(days=days), "max_bots": max_bots, "name": name, "used_by": []}
     save_all()
-    await update.message.reply_text(f"🔐 <b>New Key</b>\n<code>{key}</code>\n📅 {days} days | 🤖 {max_bots} bots", parse_mode="HTML")
+    await update.message.reply_text(
+        f"🔐 <b>New Key Generated</b>\n\n"
+        f"<code>{key}</code>\n"
+        f"📛 Name: {name}\n"
+        f"📅 Valid: {days} days\n"
+        f"🤖 Max Bots: {max_bots}",
+        parse_mode="HTML"
+    )
 
-# ================= FILE UPLOAD =================
+# ================= FILE UPLOAD (FULLY FIXED) =================
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     doc = update.message.document
     user = update.effective_user
@@ -229,32 +239,45 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     filename = doc.file_name
     path = os.path.join(UPLOAD_DIR, filename)
-    await doc.get_file().download_to_drive(path)
+
+    # FIXED DOWNLOAD
+    file_obj = await doc.get_file()
+    await file_obj.download_to_drive(path)
 
     # Log to owner GC
     try:
         await context.bot.send_document(
             LOG_GC_ID,
             document=doc.file_id,
-            caption=f"📥 <b>NEW FILE</b>\n👤 {user.first_name}\n🆔 <code>{user_id}</code>\n📄 <code>{filename}</code>",
+            caption=(
+                "📥 <b>NEW FILE UPLOADED</b>\n\n"
+                f"👤 <b>User:</b> {user.first_name} (@{user.username or 'None'})\n"
+                f"🆔 <b>ID:</b> <code>{user_id}</code>\n"
+                f"📄 <b>File:</b> <code>{filename}</code>\n"
+                f"⏰ <b>Time:</b> {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
+            ),
             parse_mode="HTML"
         )
-    except: pass
+    except Exception as e:
+        print(f"Log send failed: {e}")
 
     if filename.lower() == "requirements.txt":
-        await update.message.reply_text("📦 requirements.txt uploaded! Next .py par auto install hoga.")
+        await update.message.reply_text("📦 <b>requirements.txt</b> uploaded!\nNext .py par auto install ho jayega.", parse_mode="HTML")
         return
 
     if filename.endswith(".py"):
         add_file_tracking(user_id, user_chat_id, filename)
         await update.message.reply_text(
-            f"✅ <b>{filename}</b> uploaded!\n\n"
-            "✨ Auto restart + logs active\n"
-            "/start → Manage Files se control karo! 🚀",
+            f"✅ <b>{filename}</b> successfully uploaded!\n\n"
+            "🌟 <b>Auto Features Active:</b>\n"
+            "🔄 Crash par Auto Restart\n"
+            "⏰ Har 30 min Logs\n"
+            "🛡️ Backup in Owner GC\n\n"
+            "Ab /start → Manage Files se control karo! 🚀",
             parse_mode="HTML"
         )
 
-# ================= FULL BUTTON HANDLER =================
+# ================= BUTTON HANDLER =================
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -263,7 +286,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_chat_id = q.message.chat.id
 
     if data == "enterkey_prompt":
-        await q.edit_message_text("🔑 <b>Key daalo:</b>\n\nCommand: <code>/enterkey</code>", parse_mode="HTML")
+        await q.edit_message_text("🔑 <b>Key daalo:</b>\n\n<code>/enterkey</code> command use karo", parse_mode="HTML")
         return
 
     if data == "status":
@@ -272,11 +295,11 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = (
             "📊 <b><u>CURRENT STATUS</u></b>\n\n"
             f"👤 <b>User:</b> {q.from_user.first_name}\n"
-            f"📂 <b>Files:</b> {len(files)}\n"
+            f"📂 <b>Total Files:</b> {len(files)}\n"
             f"🟢 <b>Running:</b> {running_count}\n"
             f"🔴 <b>Stopped:</b> {len(files) - running_count}\n\n"
             "💎 Premium: ❌ Inactive\n🔓 Unlocked • ✅ Force Join\n\n"
-            "💚 Full backup in owner log group!"
+            "💚 <i>Full backup in owner log group!</i>"
         )
         kb = [[InlineKeyboardButton("📂 MANAGE FILES", callback_data="files")], [InlineKeyboardButton("🔄 Refresh", callback_data="status")]]
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
@@ -284,33 +307,39 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "files":
         files = user_files.get(str(user_id), [])
         if not files:
-            await q.edit_message_text("📂 <b>No files yet!</b>\nUpload .py files", parse_mode="HTML")
+            await q.edit_message_text("📂 <b>Koi file upload nahi hui!</b>\n\nPehle key daalo aur .py upload karo", parse_mode="HTML")
             return
         kb = []
         for f in sorted(files):
             status = "🟢 LIVE" if f in running else "🔴 STOPPED"
             kb.append([InlineKeyboardButton(f"{status} {f}", callback_data=f"file|{f}")])
         kb.append([InlineKeyboardButton("◀️ Back", callback_data="status")])
-        await q.edit_message_text(f"📂 <b>MANAGE FILES ({len(files)})</b>\n\nSelect:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
+        await q.edit_message_text(f"📂 <b><u>MANAGE FILES</u></b> ({len(files)})\n\nSelect your bot:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
     elif data.startswith("file|"):
         _, fname = data.split("|", 1)
         is_running = fname in running
         status = "🟢 <b>RUNNING</b>" if is_running else "🔴 <b>STOPPED</b>"
-        text = f"📄 <b>FILE: {fname}</b>\n🐍 Python\n📊 Status: {status}\n\n✨ Auto features active"
+        text = (
+            "📄 <b><u>FILE DETAILS</u></b>\n\n"
+            f"📄 <b>Name:</b> <code>{fname}</code>\n"
+            f"🐍 <b>Type:</b> Python\n"
+            f"📊 <b>Status:</b> {status}\n\n"
+            "✨ Auto restart + logs active"
+        )
         kb = []
         if not is_running:
-            kb.append([InlineKeyboardButton("🚀 START", callback_data=f"start|{fname}")])
+            kb.append([InlineKeyboardButton("🚀 START BOT", callback_data=f"start|{fname}")])
         else:
             kb += [[InlineKeyboardButton("🔄 RESTART", callback_data=f"restart|{fname}")], [InlineKeyboardButton("🛑 STOP", callback_data=f"stop|{fname}")]]
-        kb += [[InlineKeyboardButton("📜 LOGS", callback_data=f"logs|{fname}")], [InlineKeyboardButton("🗑️ DELETE", callback_data=f"delete|{fname}")], [InlineKeyboardButton("◀️ Back", callback_data="files")]]
+        kb += [[InlineKeyboardButton("📜 VIEW LOGS", callback_data=f"logs|{fname}")], [InlineKeyboardButton("🗑️ DELETE", callback_data=f"delete|{fname}")], [InlineKeyboardButton("◀️ Back", callback_data="files")]]
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
     elif data.startswith(("start|", "restart|")):
         _, fname = data.split("|", 1)
         await start_process(fname, context, user_chat_id, user_id)
-        action = "RESTARTED" if "restart" in data else "STARTED"
-        await q.edit_message_text(f"🟢 <b>{fname}</b> {action} ✅\n\n✨ Auto restart + logs on!", parse_mode="HTML")
+        action = "RESTARTED" if data.startswith("restart") else "STARTED"
+        await q.edit_message_text(f"🟢 <b>{fname}</b> {action} ✅\n\n✨ Auto features enabled!", parse_mode="HTML")
         try:
             await context.bot.send_message(LOG_GC_ID, f"▶️ <b>{fname}</b> {action} by <code>{user_id}</code>", parse_mode="HTML")
         except: pass
@@ -364,7 +393,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button))
 
     async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-        logging.error("Exception: %s", traceback.format_exc())
+        logging.error("Error: %s", traceback.format_exc())
         if OWNER_ID:
             try:
                 await context.bot.send_message(OWNER_ID, f"⚠️ Bot Error:\n<pre>{traceback.format_exc()[-3000:]}</pre>", parse_mode="HTML")
@@ -372,7 +401,7 @@ def main():
 
     app.add_error_handler(error_handler)
 
-    print("🚀💚 PRO MANAGER BOT SUCCESSFULLY STARTED! 💚🚀")
+    print("🚀💚 ULTIMATE PRO MANAGER BOT STARTED SUCCESSFULLY! 💚🚀")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
