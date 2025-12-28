@@ -138,6 +138,8 @@ async def periodic_logs(filename, user_chat_id, context):
 
 async def start_process(filename, context, user_chat_id, user_id=None):
     path = os.path.join(UPLOAD_DIR, filename)
+    
+    # Pehle agar running hai toh stop kar do
     if filename in running:
         running[filename]["proc"].terminate()
         running[filename]["log_file"].close()
@@ -149,9 +151,19 @@ async def start_process(filename, context, user_chat_id, user_id=None):
     if os.path.exists(req_path):
         subprocess.call([sys.executable, "-m", "pip", "install", "-r", req_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+    # Log file open
     log_file = open(f"{LOG_DIR}/{filename}.log", "a")
-    proc = subprocess.Popen([sys.executable, "-u", path], stdout=log_file, stderr=log_file, cwd=UPLOAD_DIR, start_new_session=True)
 
+    # ← YE LINE FIXED: cwd hata diya (problem yahi thi)
+    proc = subprocess.Popen(
+        [sys.executable, "-u", path],
+        stdout=log_file,
+        stderr=log_file,
+        start_new_session=True
+        # cwd=UPLOAD_DIR  ← YE LINE COMMENT YA DELETE KAR DO
+    )
+
+    # Monitor & periodic logs tasks
     monitor_task = asyncio.create_task(monitor_and_restart(filename, proc, log_file, user_chat_id, context))
     periodic_task = asyncio.create_task(periodic_logs(filename, user_chat_id, context))
 
