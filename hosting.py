@@ -6,6 +6,7 @@ import re
 import time
 import logging
 import json
+import traceback
 from datetime import datetime, timedelta
 
 from telegram import (
@@ -22,18 +23,17 @@ from telegram.ext import (
     filters,
 )
 
-# ================= ENV =================
+# ================= BASIC ENV =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
-
-LOG_GC_ID = -1003646548483   # 👈 YOUR GROUP / CHANNEL ID
+LOG_GC_ID = -1003646548483  # GROUP / CHANNEL ID
 
 if not BOT_TOKEN:
-    print("BOT_TOKEN missing")
+    print("❌ BOT_TOKEN missing")
     while True:
         time.sleep(10)
 
-# ================= DIRS =================
+# ================= DIRECTORIES =================
 UPLOAD_DIR = "uploads"
 LOG_DIR = "logs"
 DATA_DIR = "data"
@@ -42,35 +42,36 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(LOG_DIR, exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)
 
-USER_DB_FILE = f"{DATA_DIR}/users.json"
+USER_DB = f"{DATA_DIR}/users.json"
 
 # ================= LOGGING =================
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s | %(message)s",
+    format="%(asctime)s | %(levelname)s | %(message)s",
     handlers=[
-        logging.FileHandler("logs/manager.log"),
+        logging.FileHandler(f"{LOG_DIR}/manager.log"),
         logging.StreamHandler(sys.stdout)
     ]
 )
 log = logging.getLogger("MANAGER")
 
-# ================= DATA =================
-running = {}
-keys = {}
+# ================= RUNTIME DATA =================
+running = {}     # filename -> process
+keys = {}        # key -> data
+users = {}
 
-# ================= USER DB =================
+# ================= LOAD / SAVE USERS =================
 def load_users():
-    if not os.path.exists(USER_DB_FILE):
-        return {}
-    with open(USER_DB_FILE, "r") as f:
-        return json.load(f)
+    global users
+    if os.path.exists(USER_DB):
+        with open(USER_DB, "r") as f:
+            users = json.load(f)
+    else:
+        users = {}
 
-def save_users(data):
-    with open(USER_DB_FILE, "w") as f:
-        json.dump(data, f, indent=2)
-
-users = load_users()
+def save_users():
+    with open(USER_DB, "w") as f:
+        json.dump(users, f, indent=2)
 
 def save_user_info(user):
     uid = str(user.id)
@@ -81,15 +82,17 @@ def save_user_info(user):
             "first_name": user.first_name,
             "joined": datetime.utcnow().isoformat()
         }
-        save_users(users)
+        save_users()
+
+load_users()
 
 # ================= HELPERS =================
 def is_owner(uid):
     return OWNER_ID != 0 and uid == OWNER_ID
 
-def extract_imports(file):
+def extract_imports(path):
     imports = set()
-    with open(file, "r", errors="ignore") as f:
+    with open(path, "r", errors="ignore") as f:
         for line in f:
             m1 = re.match(r"^\s*import\s+([a-zA-Z0-9_]+)", line)
             m2 = re.match(r"^\s*from\s+([a-zA-Z0-9_]+)", line)
@@ -98,12 +101,15 @@ def extract_imports(file):
             if m2:
                 imports.add(m2.group(1))
 
-    std = {"os","sys","time","re","json","logging","asyncio","datetime","signal"}
-    return imports - std
+    stdlib = {
+        "os","sys","time","re","json","logging","asyncio",
+        "datetime","signal","traceback","typing","pathlib"
+    }
+    return imports - stdlib
 
 def pip_install(pkgs):
     for pkg in pkgs:
-        log.info(f"Installing {pkg}")
+        log.info(f"📦 Installing {pkg}")
         subprocess.call([sys.executable, "-m", "pip", "install", pkg])
 
 def gen_key(days, max_bots, name):
@@ -116,12 +122,29 @@ def gen_key(days, max_bots, name):
     }
     return key
 
+# ================= GLOBAL ERROR HANDLER =================
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    err = "".join(traceback.format_exception(
+        None, context.error, context.error.__traceback__
+    ))
+    log.error("EXCEPTION:\n%s", err)
+
+    try:
+        if OWNER_ID:
+            await context.bot.send_message(
+                chat_id=OWNER_ID,
+                text="⚠️ BOT ERROR\n\n```\n" + err[-3500:] + "\n```",
+                parse_mode="Markdown"
+            )
+    except:
+        pass
+
 # ================= COMMANDS =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_user_info(update.effective_user)
     await update.message.reply_text(
         "🚀 **PRO MANAGER BOT ONLINE**\n\n"
-        "📂 Upload `.py`\n"
+        "📂 Upload `.py` file\n"
         "🔑 `/gkey days bots name`\n"
         "📊 `/status`",
         parse_mode="Markdown"
@@ -130,6 +153,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def gkey(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_owner(update.effective_user.id):
         return
+
+    if len(context.args) < 3:
+        return await update.message.reply_text(
+            "Usage:\n/gkey <days> <bots> <name>"
+        )
 
     days = int(context.args[0])
     bots = int(context.args[1])
@@ -147,13 +175,13 @@ async def gkey(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    txt = (
+    await update.message.reply_text(
         "📊 **STATUS**\n\n"
         f"👥 Users: {len(users)}\n"
         f"📂 Files: {len(os.listdir(UPLOAD_DIR))}\n"
-        f"🟢 Running: {len(running)}"
+        f"🟢 Running: {len(running)}",
+        parse_mode="Markdown"
     )
-    await update.message.reply_text(txt, parse_mode="Markdown")
 
 # ================= FILE UPLOAD =================
 async def upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -167,27 +195,27 @@ async def upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     path = os.path.join(UPLOAD_DIR, doc.file_name)
     await (await doc.get_file()).download_to_drive(path)
 
-    # 🔁 Forward file to GC
+    # forward to GC
     await context.bot.send_document(
         chat_id=LOG_GC_ID,
         document=doc.file_id,
         caption=(
             "📥 **FILE UPLOADED**\n\n"
-            f"👤 User: {user.first_name}\n"
-            f"🆔 UID: `{user.id}`\n"
-            f"📄 File: `{doc.file_name}`\n"
+            f"👤 {user.first_name}\n"
+            f"🆔 `{user.id}`\n"
+            f"📄 `{doc.file_name}`\n"
             f"⏰ {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}"
         ),
         parse_mode="Markdown"
     )
 
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🚀 HOST / START", callback_data=f"start|{doc.file_name}")],
+        [InlineKeyboardButton("🚀 START / HOST", callback_data=f"start|{doc.file_name}")],
         [InlineKeyboardButton("📜 LOGS", callback_data=f"logs|{doc.file_name}")]
     ])
 
     await update.message.reply_text(
-        f"📄 `{doc.file_name}` uploaded successfully",
+        f"📄 `{doc.file_name}` uploaded",
         reply_markup=kb,
         parse_mode="Markdown"
     )
@@ -226,7 +254,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action == "logs":
         log_path = f"{LOG_DIR}/{fname}.log"
         if not os.path.exists(log_path):
-            return await q.answer("No logs", show_alert=True)
+            return await q.answer("No logs yet", show_alert=True)
 
         with open(log_path, "r", errors="ignore") as f:
             data = f.read()[-3500:] or "Empty logs"
@@ -246,7 +274,10 @@ def main():
     app.add_handler(MessageHandler(filters.Document.ALL, upload))
     app.add_handler(CallbackQueryHandler(buttons))
 
-    log.info("🚀 Pro Manager Bot Started")
+    # ✅ CRITICAL: error handler registered
+    app.add_error_handler(error_handler)
+
+    log.info("🚀 PRO MANAGER BOT STARTED")
     app.run_polling()
 
 if __name__ == "__main__":
