@@ -27,10 +27,10 @@ from telegram.ext import (
 # ================= CONFIG =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
-LOG_GC_ID = int(os.getenv("LOG_GC_ID"))  # Tera personal log group/channel ID
+LOG_GC_ID = int(os.getenv("LOG_GC_ID"))
 
 if not BOT_TOKEN or not LOG_GC_ID:
-    print("❌ BOT_TOKEN aur LOG_GC_ID environment mein daal!")
+    print("❌ BOT_TOKEN aur LOG_GC_ID daal Railway env mein!")
     sys.exit(1)
 
 # ================= DIRECTORIES =================
@@ -43,16 +43,16 @@ for d in [UPLOAD_DIR, LOG_DIR, DATA_DIR]:
 KEY_DB = f"{DATA_DIR}/keys.json"
 USER_FILES_DB = f"{DATA_DIR}/user_files.json"
 CHAT_LOGS_DB = f"{DATA_DIR}/chat_logs.json"
-AUTH_USERS_DB = f"{DATA_DIR}/authorized_users.json"  # ← NAYA ADD KIYA (fix ke liye)
+AUTH_USERS_DB = f"{DATA_DIR}/authorized_users.json"
 
 # ================= RUNTIME DATA =================
 running = {}
 keys = {}
-user_files = {}      # user_id → [files]
-chat_logs = {}       # chat_id → [files]
-authorized_users = set()  # ← Sirf yeh check karega ki user ne valid key daali hai
+user_files = {}
+chat_logs = {}
+authorized_users = set()
 
-# ================= LOAD/SAVE DATA =================
+# ================= LOAD/SAVE =================
 def load_data():
     global keys, user_files, chat_logs, authorized_users
     if os.path.exists(KEY_DB):
@@ -76,7 +76,7 @@ def save_all():
     with open(KEY_DB, "w") as f: json.dump(raw_keys, f, indent=2)
     with open(USER_FILES_DB, "w") as f: json.dump(user_files, f, indent=2)
     with open(CHAT_LOGS_DB, "w") as f: json.dump(chat_logs, f, indent=2)
-    with open(AUTH_USERS_DB, "w") as f: json.dump(list(authorized_users), f, indent=2)  # ← Save authorized users
+    with open(AUTH_USERS_DB, "w") as f: json.dump(list(authorized_users), f, indent=2)
 
 load_data()
 
@@ -111,21 +111,21 @@ def remove_file_tracking(user_id, user_chat_id, filename):
         if not chat_logs[str_chat]: del chat_logs[str_chat]
     save_all()
 
-# ================= PROCESS & LOGS =================
+# ================= AUTO RESTART & LOGS =================
 async def monitor_and_restart(filename, proc, log_file, user_chat_id, context):
     while True:
         await asyncio.sleep(5)
         if proc.poll() is not None:
             log_file.close()
             await context.bot.send_message(LOG_GC_ID, f"🔴 <b>CRASH:</b> <code>{filename}</code> | Auto Restarting...", parse_mode="HTML")
-            await context.bot.send_message(user_chat_id, f"⚠️ <b>{filename}</b> crashed! Auto restarting...", parse_mode="HTML")
+            await context.bot.send_message(user_chat_id, f"⚠️ <b>{filename}</b> crashed! 🔄 Auto restarting...", parse_mode="HTML")
             await start_process(filename, context, user_chat_id)
 
 async def periodic_logs(filename, user_chat_id, context):
     log_path = f"{LOG_DIR}/{filename}.log"
     last_size = 0
     while filename in running:
-        await asyncio.sleep(1800)
+        await asyncio.sleep(1800)  # 30 min
         if not os.path.exists(log_path): continue
         size = os.path.getsize(log_path)
         if size <= last_size: continue
@@ -144,6 +144,7 @@ async def start_process(filename, context, user_chat_id, user_id=None):
         running[filename]["monitor_task"].cancel()
         running[filename]["periodic_task"].cancel()
 
+    # Auto install requirements
     req_path = os.path.join(UPLOAD_DIR, "requirements.txt")
     if os.path.exists(req_path):
         subprocess.call([sys.executable, "-m", "pip", "install", "-r", req_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -155,8 +156,12 @@ async def start_process(filename, context, user_chat_id, user_id=None):
     periodic_task = asyncio.create_task(periodic_logs(filename, user_chat_id, context))
 
     running[filename] = {
-        "proc": proc, "log_file": log_file, "owner": user_id or running.get(filename, {}).get("owner"),
-        "user_chat_id": user_chat_id, "monitor_task": monitor_task, "periodic_task": periodic_task
+        "proc": proc,
+        "log_file": log_file,
+        "owner": user_id or running.get(filename, {}).get("owner"),
+        "user_chat_id": user_chat_id,
+        "monitor_task": monitor_task,
+        "periodic_task": periodic_task
     }
 
 # ================= COMMANDS =================
@@ -169,8 +174,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "🚀 <b><u>PRO PYTHON MANAGER BOT</u></b> 🚀\n\n"
         "🌟 <b>Features:</b>\n"
-        "✨ Auto Restart | 📦 Auto Requirements\n"
-        "⏰ 30-Min Logs | 🛡️ Secure Key\n\n"
+        "✨ Auto Restart • 📦 Auto Requirements\n"
+        "⏰ 30-Min Logs • 🛡️ Secure Key\n\n"
         "💚 <i>Hare hare bot, full power!</i> 💚"
     )
     await update.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
@@ -178,7 +183,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def enterkey_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
-    await q.edit_message_text("🔑 <b>Key daalo:</b>\nCommand: <code>/enterkey</code>", parse_mode="HTML")
+    await q.edit_message_text("🔑 <b>Key daalo:</b>\n\nCommand: <code>/enterkey</code>", parse_mode="HTML")
 
 async def enterkey(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔑 <b>Apna KEY bhejo:</b>", parse_mode="HTML")
@@ -188,17 +193,17 @@ async def check_key(update: Update, context: ContextTypes.DEFAULT_TYPE):
     key = update.message.text.strip()
     user_id = update.effective_user.id
     if is_valid_key(user_id, key):
-        authorized_users.add(str(user_id))  # ← YE LINE SE AB KEY ACCEPT HONE PAR USER AUTHORIZE HO JAYEGA
+        authorized_users.add(str(user_id))
         save_all()
-        await update.message.reply_text("✅ <b>Key Accepted!</b>\nAb .py files upload karo! 🚀", parse_mode="HTML")
+        await update.message.reply_text("✅ <b>Key Accepted!</b>\nAb .py files upload kar sakte ho! 🚀", parse_mode="HTML")
     else:
-        await update.message.reply_text("❌ <b>Invalid/Expired Key!</b>", parse_mode="HTML")
+        await update.message.reply_text("❌ <b>Invalid ya Expired Key!</b>", parse_mode="HTML")
     return ConversationHandler.END
 
 async def gkey(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_owner(update.effective_user.id): return
-    if len(context.args) < 3: 
-        await update.message.reply_text("/gkey <days> <max_bots> <name>")
+    if len(context.args) < 3:
+        await update.message.reply_text("Usage: /gkey <days> <max_bots> <name>")
         return
     days, max_bots = int(context.args[0]), int(context.args[1])
     name = " ".join(context.args[2:])
@@ -215,9 +220,9 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_chat_id = update.effective_chat.id
     user_id = user.id
 
-    if not doc or not doc.file_name.endswith((".py", ".txt")): return
+    if not doc or not doc.file_name.endswith((".py", ".txt")):
+        return
 
-    # ← FIXED CHECK: Ab authorized_users se check karega
     if str(user_id) not in authorized_users:
         await update.message.reply_text("❌ Pehle <b>/enterkey</b> se valid key daalo!", parse_mode="HTML")
         return
@@ -226,13 +231,15 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     path = os.path.join(UPLOAD_DIR, filename)
     await doc.get_file().download_to_drive(path)
 
-    # Owner GC mein log
-    await context.bot.send_document(
-        LOG_GC_ID,
-        document=doc.file_id,
-        caption=f"📥 <b>NEW FILE</b>\n👤 {user.first_name} (@{user.username or 'None'})\n🆔 <code>{user_id}</code>\n📄 <code>{filename}</code>",
-        parse_mode="HTML"
-    )
+    # Log to owner GC
+    try:
+        await context.bot.send_document(
+            LOG_GC_ID,
+            document=doc.file_id,
+            caption=f"📥 <b>NEW FILE</b>\n👤 {user.first_name}\n🆔 <code>{user_id}</code>\n📄 <code>{filename}</code>",
+            parse_mode="HTML"
+        )
+    except: pass
 
     if filename.lower() == "requirements.txt":
         await update.message.reply_text("📦 requirements.txt uploaded! Next .py par auto install hoga.")
@@ -241,11 +248,13 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if filename.endswith(".py"):
         add_file_tracking(user_id, user_chat_id, filename)
         await update.message.reply_text(
-            f"✅ <b>{filename}</b> uploaded!\n\n✨ Auto features on\n/manage files se control karo",
+            f"✅ <b>{filename}</b> uploaded!\n\n"
+            "✨ Auto restart + logs active\n"
+            "/start → Manage Files se control karo! 🚀",
             parse_mode="HTML"
         )
 
-# ================= BUTTON HANDLER =================
+# ================= FULL BUTTON HANDLER =================
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -253,19 +262,92 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = q.from_user.id
     user_chat_id = q.message.chat.id
 
-    # Baaki button code same rahega (status, files, file detail, start/restart/stop/logs/delete)
-    # (Pehle wale code se copy kar le – main yahan short rakha hoon space bachane ke liye)
-    # Agar chahiye poora button code bhi toh bol dena
+    if data == "enterkey_prompt":
+        await q.edit_message_text("🔑 <b>Key daalo:</b>\n\nCommand: <code>/enterkey</code>", parse_mode="HTML")
+        return
 
-    # Example for status (tu pehle wale se copy kar le baaki sab)
     if data == "status":
         files = user_files.get(str(user_id), [])
         running_count = sum(1 for f in files if f in running)
-        text = f"📊 <b>STATUS</b>\nFiles: {len(files)}\n🟢 Running: {running_count}\n🔴 Stopped: {len(files)-running_count}"
-        kb = [[InlineKeyboardButton("📂 MANAGE FILES", callback_data="files")]]
+        text = (
+            "📊 <b><u>CURRENT STATUS</u></b>\n\n"
+            f"👤 <b>User:</b> {q.from_user.first_name}\n"
+            f"📂 <b>Files:</b> {len(files)}\n"
+            f"🟢 <b>Running:</b> {running_count}\n"
+            f"🔴 <b>Stopped:</b> {len(files) - running_count}\n\n"
+            "💎 Premium: ❌ Inactive\n🔓 Unlocked • ✅ Force Join\n\n"
+            "💚 Full backup in owner log group!"
+        )
+        kb = [[InlineKeyboardButton("📂 MANAGE FILES", callback_data="files")], [InlineKeyboardButton("🔄 Refresh", callback_data="status")]]
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
-    # ... baaki button logic pehle wale code se daal dena (files, file|, start|, etc.)
+    elif data == "files":
+        files = user_files.get(str(user_id), [])
+        if not files:
+            await q.edit_message_text("📂 <b>No files yet!</b>\nUpload .py files", parse_mode="HTML")
+            return
+        kb = []
+        for f in sorted(files):
+            status = "🟢 LIVE" if f in running else "🔴 STOPPED"
+            kb.append([InlineKeyboardButton(f"{status} {f}", callback_data=f"file|{f}")])
+        kb.append([InlineKeyboardButton("◀️ Back", callback_data="status")])
+        await q.edit_message_text(f"📂 <b>MANAGE FILES ({len(files)})</b>\n\nSelect:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
+
+    elif data.startswith("file|"):
+        _, fname = data.split("|", 1)
+        is_running = fname in running
+        status = "🟢 <b>RUNNING</b>" if is_running else "🔴 <b>STOPPED</b>"
+        text = f"📄 <b>FILE: {fname}</b>\n🐍 Python\n📊 Status: {status}\n\n✨ Auto features active"
+        kb = []
+        if not is_running:
+            kb.append([InlineKeyboardButton("🚀 START", callback_data=f"start|{fname}")])
+        else:
+            kb += [[InlineKeyboardButton("🔄 RESTART", callback_data=f"restart|{fname}")], [InlineKeyboardButton("🛑 STOP", callback_data=f"stop|{fname}")]]
+        kb += [[InlineKeyboardButton("📜 LOGS", callback_data=f"logs|{fname}")], [InlineKeyboardButton("🗑️ DELETE", callback_data=f"delete|{fname}")], [InlineKeyboardButton("◀️ Back", callback_data="files")]]
+        await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
+
+    elif data.startswith(("start|", "restart|")):
+        _, fname = data.split("|", 1)
+        await start_process(fname, context, user_chat_id, user_id)
+        action = "RESTARTED" if "restart" in data else "STARTED"
+        await q.edit_message_text(f"🟢 <b>{fname}</b> {action} ✅\n\n✨ Auto restart + logs on!", parse_mode="HTML")
+        try:
+            await context.bot.send_message(LOG_GC_ID, f"▶️ <b>{fname}</b> {action} by <code>{user_id}</code>", parse_mode="HTML")
+        except: pass
+
+    elif data.startswith("stop|"):
+        _, fname = data.split("|", 1)
+        if fname in running:
+            running[fname]["proc"].terminate()
+            running[fname]["log_file"].close()
+            running[fname]["monitor_task"].cancel()
+            running[fname]["periodic_task"].cancel()
+            del running[fname]
+            await q.edit_message_text(f"🔴 <b>{fname}</b> STOPPED 🛑", parse_mode="HTML")
+            await context.bot.send_message(LOG_GC_ID, f"⏹️ <b>{fname}</b> STOPPED by <code>{user_id}</code>", parse_mode="HTML")
+
+    elif data.startswith("logs|"):
+        _, fname = data.split("|", 1)
+        log_path = f"{LOG_DIR}/{fname}.log"
+        if os.path.exists(log_path) and os.path.getsize(log_path) > 0:
+            with open(log_path, "r", errors="ignore") as f:
+                logs = f.read()[-3800:]
+            await q.message.reply_text(f"📜 <b>LOGS — {fname}</b>\n<pre>{logs}</pre>", parse_mode="HTML")
+        else:
+            await q.answer("No logs yet!", show_alert=True)
+
+    elif data.startswith("delete|"):
+        _, fname = data.split("|", 1)
+        if fname in running:
+            running[fname]["proc"].terminate()
+            running[fname]["log_file"].close()
+            del running[fname]
+        paths = [os.path.join(UPLOAD_DIR, fname), f"{LOG_DIR}/{fname}.log"]
+        for p in paths:
+            if os.path.exists(p): os.remove(p)
+        remove_file_tracking(user_id, user_chat_id, fname)
+        await q.edit_message_text(f"🗑️ <b>{fname}</b> DELETED permanently!", parse_mode="HTML")
+        await context.bot.send_message(LOG_GC_ID, f"🗑️ <b>{fname}</b> DELETED by <code>{user_id}</code>", parse_mode="HTML")
 
 # ================= MAIN =================
 def main():
@@ -281,9 +363,16 @@ def main():
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(CallbackQueryHandler(button))
 
-    app.add_error_handler(lambda u, c: logging.error(traceback.format_exc()))
+    async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+        logging.error("Exception: %s", traceback.format_exc())
+        if OWNER_ID:
+            try:
+                await context.bot.send_message(OWNER_ID, f"⚠️ Bot Error:\n<pre>{traceback.format_exc()[-3000:]}</pre>", parse_mode="HTML")
+            except: pass
 
-    print("🚀💚 BOT LIVE HO GAYA – AB KOI ERROR NHI AAYEGA! 💚🚀")
+    app.add_error_handler(error_handler)
+
+    print("🚀💚 PRO MANAGER BOT SUCCESSFULLY STARTED! 💚🚀")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
