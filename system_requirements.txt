@@ -1,0 +1,6 @@
+ffmpeg
+wget
+git
+clang
+tur-repo
+openai

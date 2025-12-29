@@ -124,7 +124,6 @@ async def periodic_logs(filename, user_chat_id, context):
             raw_new_log = f.read()
             last_size = size
         if raw_new_log.strip():
-            # 🔥 SAFE ESCAPE FOR HTML
             safe_log = raw_new_log.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
             await context.bot.send_message(
                 user_chat_id,
@@ -132,7 +131,7 @@ async def periodic_logs(filename, user_chat_id, context):
                 parse_mode="HTML"
             )
 
-# ================= START PROCESS (TERMUX LOGS FIXED) =================
+# ================= START PROCESS (WITH AUTO PKG + PIP) =================
 async def start_process(filename, context, user_chat_id, user_id=None):
     path = os.path.join(UPLOAD_DIR, filename)
     
@@ -141,16 +140,56 @@ async def start_process(filename, context, user_chat_id, user_id=None):
         running[filename]["log_file"].close()
         running[filename]["periodic_task"].cancel()
 
+    # ===== AUTO SYSTEM PACKAGES (pkg install) =====
+    sys_req_path = os.path.join(UPLOAD_DIR, "system_requirements.txt")
+    if os.path.exists(sys_req_path):
+        await context.bot.send_message(
+            user_chat_id,
+            "🔧 <b>System packages (pkg install) shuru kar raha hoon...</b>\nLive progress logs mein dikhega! ⏳",
+            parse_mode="HTML"
+        )
+        with open(sys_req_path, "r") as f:
+            packages = [line.strip() for line in f if line.strip()]
+
+        if packages:
+            log_file_sys = open(f"{LOG_DIR}/{filename}_pkg_install.log", "a", buffering=1)
+            proc_pkg = subprocess.Popen(
+                ["pkg", "install", "-y"] + packages,
+                stdout=log_file_sys,
+                stderr=log_file_sys,
+                text=True
+            )
+            proc_pkg.wait()
+            log_file_sys.close()
+
+            if proc_pkg.returncode == 0:
+                await context.bot.send_message(user_chat_id, "✅ <b>System packages successfully install ho gaye!</b>", parse_mode="HTML")
+            else:
+                await context.bot.send_message(user_chat_id, "⚠️ <b>System packages mein error aaya, logs check karo.</b>", parse_mode="HTML")
+
+    # ===== AUTO PIP REQUIREMENTS =====
     req_path = os.path.join(UPLOAD_DIR, "requirements.txt")
     if os.path.exists(req_path):
-        subprocess.call([sys.executable, "-m", "pip", "install", "-r", req_path],
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        await context.bot.send_message(user_chat_id, "📦 <b>pip packages install kar raha hoon...</b>", parse_mode="HTML")
+        log_file_pip = open(f"{LOG_DIR}/{filename}_pip_install.log", "a", buffering=1)
+        proc_pip = subprocess.Popen(
+            [sys.executable, "-m", "pip", "install", "-r", req_path],
+            stdout=log_file_pip,
+            stderr=log_file_pip,
+            text=True
+        )
+        proc_pip.wait()
+        log_file_pip.close()
+        if proc_pip.returncode == 0:
+            await context.bot.send_message(user_chat_id, "✅ <b>pip packages install complete!</b>", parse_mode="HTML")
+        else:
+            await context.bot.send_message(user_chat_id, "⚠️ <b>pip install mein error, logs dekh lo.</b>", parse_mode="HTML")
 
-    # Line buffering + immediate write
+    # ===== RUN THE BOT =====
     log_file = open(f"{LOG_DIR}/{filename}.log", "a", buffering=1)
 
     proc = subprocess.Popen(
-        [sys.executable, "-u", path],  # 🔥 -u for unbuffered output (Termux fix)
+        [sys.executable, "-u", path],
         stdout=log_file,
         stderr=log_file,
         start_new_session=True
@@ -179,8 +218,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ HTML Parse Errors Fixed\n"
         "⏰ 30-Min Auto Logs\n"
         "🔄 Manual Control Only\n"
-        "🛡️ Full Secure Backup\n\n"
-        "Upload your .py bots now!"
+        "🛡️ Full Secure Backup\n"
+        "🔥 <b>NEW: AUTO PKG + PIP INSTALL</b> 🔥\n\n"
+        "📦 <code>requirements.txt</code> → Auto pip install\n"
+        "🔧 <code>system_requirements.txt</code> → Auto pkg install\n"
+        "   → Har line mein ek package (jaise: ffmpeg, wget, git, clang)\n\n"
+        "Upload your .py bots now! 💚"
     )
     await update.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
 
@@ -260,8 +303,9 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Log send failed: {e}")
 
-    if filename.lower() == "requirements.txt":
-        await update.message.reply_text("📦 <b>requirements.txt</b> uploaded!\nAuto install on next .py", parse_mode="HTML")
+    if filename.lower() in ["requirements.txt", "system_requirements.txt"]:
+        msg = "📦 <b>requirements.txt</b> uploaded! → Auto pip install on next start" if filename.lower() == "requirements.txt" else "🔧 <b>system_requirements.txt</b> uploaded! → Auto pkg install on next start"
+        await update.message.reply_text(msg + "\n\nFormat: Har line mein ek package name.", parse_mode="HTML")
         return
 
     if filename.endswith(".py"):
@@ -269,12 +313,13 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"✅ <b>{filename}</b> uploaded!\n\n"
             "⏰ 30-min logs active\n"
-            "🔄 Manual control\n\n"
+            "🔄 Manual control\n"
+            "🔥 Auto pkg + pip install on start!\n\n"
             "Use /start → Manage Files",
             parse_mode="HTML"
         )
 
-# ================= BUTTON HANDLER (WITH SAFE LOGS & BACK BUTTONS) =================
+# ================= BUTTON HANDLER =================
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -295,7 +340,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📂 <b>Total Files:</b> {len(files)}\n"
             f"🟢 <b>Running:</b> {running_count}\n"
             f"🔴 <b>Stopped:</b> {len(files) - running_count}\n\n"
-            "✅ All bugs fixed!"
+            "✅ All features active! Auto pkg + pip 🚀"
         )
         kb = [
             [InlineKeyboardButton("📂 MANAGE FILES", callback_data="files")],
@@ -324,7 +369,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📄 <b>Name:</b> <code>{fname}</code>\n"
             f"🐍 <b>Type:</b> Python\n"
             f"📊 <b>Status:</b> {status}\n\n"
-            "🔄 Manual Control"
+            "🔄 Manual Control | Auto Install Active"
         )
         kb = []
         if not is_running:
@@ -347,7 +392,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("📊 Status", callback_data="status")]
         ]
         await q.edit_message_text(
-            f"🟢 <b>{fname}</b> {action} Successfully! ✅\n\nLogs visible instantly!",
+            f"🟢 <b>{fname}</b> {action} Successfully! ✅\n\nAuto pkg + pip complete!\nLogs live aa rahe hain!",
             reply_markup=InlineKeyboardMarkup(kb),
             parse_mode="HTML"
         )
@@ -379,7 +424,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if os.path.exists(log_path) and os.path.getsize(log_path) > 0:
             with open(log_path, "r", errors="ignore") as f:
                 raw_logs = f.read()[-3800:]
-            # 🔥 SAFE ESCAPE TO PREVENT HTML PARSE ERROR
             safe_logs = raw_logs.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
             await q.message.reply_text(
                 f"📜 <b>LOGS — {fname}</b>\n<pre>{safe_logs}</pre>",
@@ -387,7 +431,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="HTML"
             )
         else:
-            await q.message.reply_text("📜 No logs yet.", reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
+            await q.message.reply_text("📜 No logs yet (installing packages ya bot start nahi hua).", reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
     elif data.startswith("delete|"):
         _, fname = data.split("|", 1)
@@ -419,7 +463,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button))
 
     async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-        logging.error("Error: %s", traceback.format_exc())
+        print("Error:", traceback.format_exc())
         if OWNER_ID:
             try:
                 await context.bot.send_message(OWNER_ID, f"⚠️ Bot Error:\n<pre>{traceback.format_exc()[-3000:]}</pre>", parse_mode="HTML")
@@ -427,7 +471,7 @@ def main():
 
     app.add_error_handler(error_handler)
 
-    print("🚀💚 ULTIMATE PRO MANAGER BOT STARTED | ALL FIXES APPLIED! 💚🚀")
+    print("🚀💚 ULTIMATE PRO MANAGER BOT STARTED | AUTO PKG + PIP ACTIVE! 💚🚀")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
