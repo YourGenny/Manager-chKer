@@ -1,9 +1,6 @@
 import os
 import sys
 import subprocess
-import re
-import time
-import logging
 import json
 import traceback
 import asyncio
@@ -111,7 +108,7 @@ def remove_file_tracking(user_id, user_chat_id, filename):
         if not chat_logs[str_chat]: del chat_logs[str_chat]
     save_all()
 
-# ================= PERIODIC LOGS ONLY (NO AUTO RESTART) =================
+# ================= PERIODIC LOGS (SAFE HTML) =================
 async def periodic_logs(filename, user_chat_id, context):
     log_path = f"{LOG_DIR}/{filename}.log"
     last_size = 0
@@ -124,34 +121,36 @@ async def periodic_logs(filename, user_chat_id, context):
             continue
         with open(log_path, "r", errors="ignore") as f:
             f.seek(last_size)
-            new_log = f.read()
+            raw_new_log = f.read()
             last_size = size
-        if new_log.strip():
+        if raw_new_log.strip():
+            # 🔥 SAFE ESCAPE FOR HTML
+            safe_log = raw_new_log.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
             await context.bot.send_message(
                 user_chat_id,
-                f"📜 <b>30-Min Auto Logs — {filename}</b>\n<pre>{new_log[-3500:]}</pre>",
+                f"📜 <b>30-Min Auto Logs — {filename}</b>\n<pre>{safe_log[-3500:]}</pre>",
                 parse_mode="HTML"
             )
 
+# ================= START PROCESS (TERMUX LOGS FIXED) =================
 async def start_process(filename, context, user_chat_id, user_id=None):
     path = os.path.join(UPLOAD_DIR, filename)
     
-    # Stop if already running
     if filename in running:
         running[filename]["proc"].terminate()
         running[filename]["log_file"].close()
         running[filename]["periodic_task"].cancel()
 
-    # Auto install requirements.txt (if exists)
     req_path = os.path.join(UPLOAD_DIR, "requirements.txt")
     if os.path.exists(req_path):
         subprocess.call([sys.executable, "-m", "pip", "install", "-r", req_path],
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    log_file = open(f"{LOG_DIR}/{filename}.log", "a")
+    # Line buffering + immediate write
+    log_file = open(f"{LOG_DIR}/{filename}.log", "a", buffering=1)
 
     proc = subprocess.Popen(
-        [sys.executable, "-u", path],
+        [sys.executable, "-u", path],  # 🔥 -u for unbuffered output (Termux fix)
         stdout=log_file,
         stderr=log_file,
         start_new_session=True
@@ -176,13 +175,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ])
     text = (
         "🚀 <b><u>PRO PYTHON MANAGER BOT</u></b> 🚀\n\n"
-        "🌟 <b>Features:</b>\n"
-        "📦 Auto Install Requirements\n"
+        "✅ Termux Logs Fixed\n"
+        "✅ HTML Parse Errors Fixed\n"
         "⏰ 30-Min Auto Logs\n"
-        "🔄 Manual Restart Only (No Auto Restart)\n"
-        "🛡️ Secure Key System\n"
-        "💚 Full Backup in Owner Log GC\n\n"
-        "Upload .py files and manage easily! 💚"
+        "🔄 Manual Control Only\n"
+        "🛡️ Full Secure Backup\n\n"
+        "Upload your .py bots now!"
     )
     await update.message.reply_text(text, reply_markup=keyboard, parse_mode="HTML")
 
@@ -201,7 +199,7 @@ async def check_key(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_valid_key(user_id, key):
         authorized_users.add(str(user_id))
         save_all()
-        await update.message.reply_text("✅ <b>Key Accepted!</b>\n\nAb .py files upload karo! 🚀", parse_mode="HTML")
+        await update.message.reply_text("✅ <b>Key Accepted!</b>\n\nAb .py files upload kar sakte ho! 🚀", parse_mode="HTML")
     else:
         await update.message.reply_text("❌ <b>Invalid/Expired Key!</b>\nOwner se new key lo.", parse_mode="HTML")
     return ConversationHandler.END
@@ -246,7 +244,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_obj = await doc.get_file()
     await file_obj.download_to_drive(path)
 
-    # Log to owner group
     try:
         await context.bot.send_document(
             LOG_GC_ID,
@@ -264,7 +261,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"Log send failed: {e}")
 
     if filename.lower() == "requirements.txt":
-        await update.message.reply_text("📦 <b>requirements.txt</b> uploaded!\nNext .py par auto install hoga.", parse_mode="HTML")
+        await update.message.reply_text("📦 <b>requirements.txt</b> uploaded!\nAuto install on next .py", parse_mode="HTML")
         return
 
     if filename.endswith(".py"):
@@ -272,12 +269,12 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"✅ <b>{filename}</b> uploaded!\n\n"
             "⏰ 30-min logs active\n"
-            "🔄 Manual control only\n\n"
-            "Ab /start → Manage Files se control karo!",
+            "🔄 Manual control\n\n"
+            "Use /start → Manage Files",
             parse_mode="HTML"
         )
 
-# ================= BUTTON HANDLER (WITH BACK BUTTONS) =================
+# ================= BUTTON HANDLER (WITH SAFE LOGS & BACK BUTTONS) =================
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -286,7 +283,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_chat_id = q.message.chat.id
 
     if data == "enterkey_prompt":
-        await q.edit_message_text("🔑 <b>Key daalo:</b>\n\n<code>/enterkey</code> use karo", parse_mode="HTML")
+        await q.edit_message_text("🔑 <b>Key daalo:</b>\n\n<code>/enterkey</code>", parse_mode="HTML")
         return
 
     if data == "status":
@@ -298,7 +295,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📂 <b>Total Files:</b> {len(files)}\n"
             f"🟢 <b>Running:</b> {running_count}\n"
             f"🔴 <b>Stopped:</b> {len(files) - running_count}\n\n"
-            "🔄 Auto Restart: OFF (Manual Only)"
+            "✅ All bugs fixed!"
         )
         kb = [
             [InlineKeyboardButton("📂 MANAGE FILES", callback_data="files")],
@@ -309,14 +306,14 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "files":
         files = user_files.get(str(user_id), [])
         if not files:
-            await q.edit_message_text("📂 <b>Koi file nahi!</b>\nPehle key daalo aur .py upload karo", parse_mode="HTML")
+            await q.edit_message_text("📂 <b>No files uploaded yet!</b>\nEnter key & upload .py", parse_mode="HTML")
             return
         kb = []
         for f in sorted(files):
             status = "🟢 LIVE" if f in running else "🔴 STOPPED"
             kb.append([InlineKeyboardButton(f"{status} {f}", callback_data=f"file|{f}")])
         kb.append([InlineKeyboardButton("◀️ Back", callback_data="status")])
-        await q.edit_message_text(f"📂 <b><u>MANAGE FILES</u></b> ({len(files)})\n\nSelect bot:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
+        await q.edit_message_text(f"📂 <b><u>MANAGE FILES</u></b> ({len(files)})\n\nSelect:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
     elif data.startswith("file|"):
         _, fname = data.split("|", 1)
@@ -327,7 +324,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📄 <b>Name:</b> <code>{fname}</code>\n"
             f"🐍 <b>Type:</b> Python\n"
             f"📊 <b>Status:</b> {status}\n\n"
-            "🔄 Manual Control Only"
+            "🔄 Manual Control"
         )
         kb = []
         if not is_running:
@@ -350,9 +347,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("📊 Status", callback_data="status")]
         ]
         await q.edit_message_text(
-            f"🟢 <b>{fname}</b> {action} Successfully! ✅\n\n"
-            "⏰ 30-min logs active\n"
-            "🔄 Manual only (no auto restart)",
+            f"🟢 <b>{fname}</b> {action} Successfully! ✅\n\nLogs visible instantly!",
             reply_markup=InlineKeyboardMarkup(kb),
             parse_mode="HTML"
         )
@@ -383,8 +378,14 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         if os.path.exists(log_path) and os.path.getsize(log_path) > 0:
             with open(log_path, "r", errors="ignore") as f:
-                logs = f.read()[-3800:]
-            await q.message.reply_text(f"📜 <b>LOGS — {fname}</b>\n<pre>{logs}</pre>", reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
+                raw_logs = f.read()[-3800:]
+            # 🔥 SAFE ESCAPE TO PREVENT HTML PARSE ERROR
+            safe_logs = raw_logs.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            await q.message.reply_text(
+                f"📜 <b>LOGS — {fname}</b>\n<pre>{safe_logs}</pre>",
+                reply_markup=InlineKeyboardMarkup(kb),
+                parse_mode="HTML"
+            )
         else:
             await q.message.reply_text("📜 No logs yet.", reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
@@ -426,7 +427,7 @@ def main():
 
     app.add_error_handler(error_handler)
 
-    print("🚀💚 PRO MANAGER BOT (Manual Restart + Back Buttons) STARTED! 💚🚀")
+    print("🚀💚 ULTIMATE PRO MANAGER BOT STARTED | ALL FIXES APPLIED! 💚🚀")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
